@@ -68,12 +68,12 @@ static void led_on() {
 
 // ── CAN frame definitions ───────────────────────────────────────────────────
 
-struct tx_frame_def {
+typedef struct {
     uint32_t id;
     uint8_t data[8];
-};
+} tx_frame_def_t;
 
-static const tx_frame_def TX_FRAMES[] = {
+static const tx_frame_def_t TX_FRAMES[] = {
     { 0x405, { 0x10, 0x00, 0x00, 0x00, 0x00, 0x30, 0x30, 0x30 } },
     { 0x405, { 0x11, 0x58, 0x30, 0x30, 0x30, 0x35, 0x30, 0x50 } },
     { 0x405, { 0x12, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30 } },
@@ -119,15 +119,15 @@ static void twai_init() {
 
 // ── Send one CAN frame ─────────────────────────────────────────────────────
 
-static void send_frame(const tx_frame_def &f) {
+static void send_frame(int idx) {
     twai_message_t msg = {};
-    msg.identifier = f.id;
+    msg.identifier = TX_FRAMES[idx].id;
     msg.data_length_code = 8;
-    memcpy(msg.data, f.data, 8);
+    memcpy(msg.data, TX_FRAMES[idx].data, 8);
 
     esp_err_t err = twai_transmit(&msg, pdMS_TO_TICKS(10));
     if (err != ESP_OK) {
-        Serial.printf("TX 0x%03X failed (%d)\n", f.id, err);
+        Serial.printf("TX 0x%03X failed (%d)\n", TX_FRAMES[idx].id, err);
     }
 }
 
@@ -188,7 +188,7 @@ void loop() {
     }
 
     if (cycle_in_progress && now >= next_frame_ms) {
-        send_frame(TX_FRAMES[current_frame_idx]);
+        send_frame(current_frame_idx);
         current_frame_idx++;
         if (current_frame_idx >= TX_FRAME_COUNT) {
             cycle_in_progress = false;
