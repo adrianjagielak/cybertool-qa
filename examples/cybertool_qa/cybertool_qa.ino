@@ -2,7 +2,7 @@
  * Cybertool QA Test Firmware for LILYGO T-2Can
  *
  * Transmits CAN frames every 250ms and checks for a valid Cybertool response.
- * When a working Cybertool is connected, the APA102 LED blinks ~4 times/sec.
+ * Prints PASS/FAIL status to serial every second.
  *
  * CAN bus used: ESP32-S3 internal TWAI (CAN-B) at 500 kbps.
  *
@@ -15,16 +15,11 @@
  *
  * We send 0x3FD with byte[2] bit 3 = 1 (0x0A).
  * A working Cybertool echoes 0x3FD back with byte[2] bit 3 = 0 (0x02).
- * Each valid response triggers one LED blink cycle.
  */
 
 #include <Arduino.h>
 #include "driver/twai.h"
 #include "pin_config.h"
-
-// APA102 LED pins
-#define APA102_DATA  8
-#define APA102_CLOCK 3
 
 // How long after last valid response before we consider Cybertool disconnected
 #define RESPONSE_TIMEOUT_MS 500
@@ -33,38 +28,8 @@
 #define CYCLE_PERIOD_MS  250
 #define FRAME_GAP_MS      50
 
-// LED blink: on for half the cycle, off for half
-#define LED_ON_MS  125
-
-// ── APA102 helpers ──────────────────────────────────────────────────────────
-
-static void apa102_write_byte(uint8_t b) {
-    for (int i = 7; i >= 0; i--) {
-        digitalWrite(APA102_DATA, (b >> i) & 1);
-        digitalWrite(APA102_CLOCK, HIGH);
-        digitalWrite(APA102_CLOCK, LOW);
-    }
-}
-
-static void apa102_set(uint8_t r, uint8_t g, uint8_t b, uint8_t brightness) {
-    // Start frame: 32 bits of 0
-    for (int i = 0; i < 4; i++) apa102_write_byte(0x00);
-    // LED frame: 111 + 5-bit brightness, then B, G, R
-    apa102_write_byte(0xE0 | (brightness & 0x1F));
-    apa102_write_byte(b);
-    apa102_write_byte(g);
-    apa102_write_byte(r);
-    // End frame: 32 bits of 1
-    for (int i = 0; i < 4; i++) apa102_write_byte(0xFF);
-}
-
-static void led_off() {
-    apa102_set(0, 0, 0, 0);
-}
-
-static void led_on() {
-    apa102_set(0, 255, 0, 10);  // green, moderate brightness
-}
+// Status print interval
+#define STATUS_INTERVAL_MS 1000
 
 // ── CAN frame definitions ───────────────────────────────────────────────────
 
@@ -85,8 +50,8 @@ static const int TX_FRAME_COUNT = sizeof(TX_FRAMES) / sizeof(TX_FRAMES[0]);
 // ── State ───────────────────────────────────────────────────────────────────
 
 static unsigned long last_valid_response_ms = 0;
-static bool led_is_on = false;
-static unsigned long led_on_since = 0;
+static unsigned long last_status_print_ms = 0;
+static bool was_connected = false;
 
 static unsigned long next_cycle_ms = 0;
 static int current_frame_idx = 0;
@@ -140,7 +105,6 @@ static void check_rx() {
             // Check byte[2] bit 3 is 0
             if ((rx.data[2] & 0x08) == 0) {
                 last_valid_response_ms = millis();
-                Serial.println("RX: Valid Cybertool response on 0x3FD");
             }
         }
     }
@@ -165,12 +129,6 @@ void setup() {
     delay(500);
     Serial.println("\n=== Cybertool QA Test Board ===");
 
-    // LED init
-    pinMode(APA102_DATA, OUTPUT);
-    pinMode(APA102_CLOCK, OUTPUT);
-    led_off();
-
-    // CAN init
     twai_init();
 
     next_cycle_ms = millis();
@@ -202,27 +160,28 @@ void loop() {
     check_rx();
     check_bus_health();
 
-    // ── LED: blink while Cybertool is connected ──
+    // ── Status: print PASS/FAIL to serial ──
     bool cybertool_connected = (now - last_valid_response_ms) < RESPONSE_TIMEOUT_MS
                                && last_valid_response_ms != 0;
 
-    if (cybertool_connected) {
-        // Blink ~4 Hz: 125ms on, 125ms off
-        if (led_is_on && (now - led_on_since >= LED_ON_MS)) {
-            led_off();
-            led_is_on = false;
-            led_on_since = now;
-        }
-        if (!led_is_on && (now - led_on_since >= LED_ON_MS)) {
-            led_on();
-            led_is_on = true;
-            led_on_since = now;
-        }
-    } else {
-        if (led_is_on) {
-            led_off();
-            led_is_on = false;
-        }
-        led_on_since = 0;
+    // Print immediately on state change
+    if (cybertool_connected && !was_connected) {
+        Serial.println(">>> PASS - Cybertool detected and responding <<<");
+        last_status_print_ms = now;
+    } else if (!cybertool_connected && was_connected) {
+        Serial.println(">>> FAIL - Cybertool disconnected <<<");
+        last_status_print_ms = now;
     }
+
+    // Print periodic status every second
+    if (now - last_status_print_ms >= STATUS_INTERVAL_MS) {
+        if (cybertool_connected) {
+            Serial.println("PASS");
+        } else {
+            Serial.println("FAIL - No Cybertool response");
+        }
+        last_status_print_ms = now;
+    }
+
+    was_connected = cybertool_connected;
 }
