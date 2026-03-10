@@ -16,17 +16,22 @@
  * We send 0x3FD with byte[2] bit 3 = 1 (0x0A).
  * A working Cybertool echoes 0x3FD back with byte[2] bit 3 = 0 (0x02).
  *
- * Status LED on GPIO 38: solid ON = PASS, OFF = no response.
+ * Status LED on GPIO 38 (no resistor needed — driven via PWM at low
+ * duty cycle to limit average current).
  * Solder LED anode (+) to IO38 pad, cathode (-) to GND pad on the
  * 26-pin expansion header.
  */
 
 #include <Arduino.h>
 #include "driver/twai.h"
+#include "driver/ledc.h"
 #include "pin_config.h"
 
-// External status LED (active high)
-#define LED_PIN 38
+// External status LED (active high, driven via LEDC PWM)
+#define LED_PIN        38
+#define LED_PWM_FREQ   1000   // 1 kHz — fast enough to look steady
+#define LED_PWM_RES    8      // 8-bit resolution (0-255)
+#define LED_PWM_DUTY   12     // ~5% duty → ~3 mA average, safe without resistor
 
 // How long after last valid response before we consider Cybertool disconnected
 #define RESPONSE_TIMEOUT_MS 500
@@ -136,9 +141,9 @@ void setup() {
     delay(500);
     Serial.println("\n=== Cybertool QA Test Board ===");
 
-    // LED init
-    pinMode(LED_PIN, OUTPUT);
-    digitalWrite(LED_PIN, LOW);
+    // LED init — use LEDC PWM so we can run a bare LED without a resistor
+    ledcAttach(LED_PIN, LED_PWM_FREQ, LED_PWM_RES);
+    ledcWrite(LED_PIN, 0);
 
     twai_init();
 
@@ -175,8 +180,8 @@ void loop() {
     bool cybertool_connected = (now - last_valid_response_ms) < RESPONSE_TIMEOUT_MS
                                && last_valid_response_ms != 0;
 
-    // LED: solid on when connected, off when not
-    digitalWrite(LED_PIN, cybertool_connected ? HIGH : LOW);
+    // LED: on when connected (low duty = no resistor needed), off when not
+    ledcWrite(LED_PIN, cybertool_connected ? LED_PWM_DUTY : 0);
 
     // Print immediately on state change
     if (cybertool_connected && !was_connected) {
