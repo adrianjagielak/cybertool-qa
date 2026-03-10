@@ -15,11 +15,18 @@
  *
  * We send 0x3FD with byte[2] bit 3 = 1 (0x0A).
  * A working Cybertool echoes 0x3FD back with byte[2] bit 3 = 0 (0x02).
+ *
+ * Status LED on GPIO 38: solid ON = PASS, OFF = no response.
+ * Solder LED anode (+) to IO38 pad, cathode (-) to GND pad on the
+ * 26-pin expansion header.
  */
 
 #include <Arduino.h>
 #include "driver/twai.h"
 #include "pin_config.h"
+
+// External status LED (active high)
+#define LED_PIN 38
 
 // How long after last valid response before we consider Cybertool disconnected
 #define RESPONSE_TIMEOUT_MS 500
@@ -129,6 +136,10 @@ void setup() {
     delay(500);
     Serial.println("\n=== Cybertool QA Test Board ===");
 
+    // LED init
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, LOW);
+
     twai_init();
 
     next_cycle_ms = millis();
@@ -163,6 +174,9 @@ void loop() {
     // ── Status: print PASS/FAIL to serial ──
     bool cybertool_connected = (now - last_valid_response_ms) < RESPONSE_TIMEOUT_MS
                                && last_valid_response_ms != 0;
+
+    // LED: solid on when connected, off when not
+    digitalWrite(LED_PIN, cybertool_connected ? HIGH : LOW);
 
     // Print immediately on state change
     if (cybertool_connected && !was_connected) {
