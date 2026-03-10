@@ -207,13 +207,13 @@ void loop() {
                                && last_valid_response_ms != 0;
 
     if (cybertool_connected) {
-        // Each valid response triggers led_on; it stays on for LED_ON_MS then off
+        // Blink ~4 Hz: 125ms on, 125ms off
         if (led_is_on && (now - led_on_since >= LED_ON_MS)) {
             led_off();
             led_is_on = false;
+            led_on_since = now;
         }
-        // Turn on when we get a new response (driven by last_valid_response_ms changing)
-        if (!led_is_on && (now - last_valid_response_ms < 10)) {
+        if (!led_is_on && (now - led_on_since >= LED_ON_MS)) {
             led_on();
             led_is_on = true;
             led_on_since = now;
@@ -223,5 +223,6 @@ void loop() {
             led_off();
             led_is_on = false;
         }
+        led_on_since = 0;
     }
 }
