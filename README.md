@@ -1,3 +1,18 @@
+
+# One-time: install PlatformIO CLI if not already installed
+pip install platformio
+
+# Build and upload (auto-detects USB port)
+pio run -t upload
+
+# Or to also monitor serial output:
+pio run -t upload && pio device monitor
+
+
+
+
+
+
 <!--
  * @Description: None
  * @Author: LILYGO_L
